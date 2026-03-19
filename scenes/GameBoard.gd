@@ -296,7 +296,7 @@ func _build_board() -> void:
 		func(_at, data): _drop_play_card(data))           # 执行打出逻辑
 
 	# ── 视觉装饰层（必须在游戏容器之前加入，渲染在所有UI之下）──
-	var aesthetic := load("res://scenes/BoardAesthetic.gd").new()
+	var aesthetic: Node2D = load("res://scenes/BoardAesthetic.gd").new()
 	add_child(aesthetic)
 
 	# ── 游戏内容容器（第二阶段：所有游戏元素加入容器）──
