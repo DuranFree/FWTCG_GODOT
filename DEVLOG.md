@@ -73,6 +73,11 @@
 - 再点已选同张同操作 → 取消；同一张不能同时横置+回收
 - `_btn_tap_all` 复用为确定按钮，显示 `✓ 确定（横置×N  回收×M）`
 
+### ✅ 2026-03-19 逻辑审查修复
+- **CombatManager**：战后 HP 重置 `u["current_hp"] = u["current_atk"]`，传奇跳过
+- **SpellManager**：force_move 新增玩家战场选择弹窗 + AI智能选目标战场
+- **PromptManager**：新增30秒超时保护，超时自动 resolve(null)
+
 ### 🔧 BUG 修复记录
 
 | ID | 问题 | 原因 | 修复 | 文件 |
