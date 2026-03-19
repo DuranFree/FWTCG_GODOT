@@ -1,0 +1,21 @@
+# Godot 4 generated files
+.godot/
+*.uid
+
+# Export / build outputs
+export/
+*.exe
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor settings (optional: remove if you want to share editor layout)
+.godot/editor/
+.godot/imported/

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"E:\\\\claudeCode\\\\FWTCG_V3d_V9\\\\js\" -type f -name \"*.js\" -exec wc -l {} +)",
+      "Bash(wc -l \"E:\\\\claudeCode\\\\FWTCG_V3d_V9\\\\css\"/*.css)",
+      "Bash(wc -l *.js)",
+      "Bash(find E:claudeCodeFWTCG_V3d_V9/js -name *keyword* -o -name *keyWord*)",
+      "Bash(grep -l keyword E:claudeCodeFWTCG_V3d_V9/js/*.js)",
+      "Bash(ls -lh E:/claudeCode/goDOT/FWTCG_GODOT_V4/*.gd E:/claudeCode/goDOT/FWTCG_GODOT_V4/autoload/*.gd E:/claudeCode/goDOT/FWTCG_GODOT_V4/scenes/*.gd)",
+      "Bash(wc -l E:/claudeCode/goDOT/FWTCG_GODOT_V4/autoload/*.gd E:/claudeCode/goDOT/FWTCG_GODOT_V4/scenes/*.gd)",
+      "Bash(wc -l /e/claudeCode/goDOT/FWTCG_GODOT_V4/autoload/*.gd)",
+      "Bash(\"E:\\\\claudeCode\\\\goDOT\\\\FWTCG_GODOT_V4\\\\DEVLOG.md\")",
+      "Bash(Get-Content \"E:\\\\claudeCode\\\\goDOT\\\\FWTCG_GODOT_V4\\\\scenes\\\\GameBoard.gd\")",
+      "Bash(Measure-Object -Line)",
+      "Bash(Select-Object -ExpandProperty Lines)",
+      "Bash(python3 -c \":*)",
+      "Bash(find E:claudeCodeFWTCG_V3d_V9 -type f -name *.js)",
+      "Bash(python3:*)",
+      "Bash(python -c \":*)",
+      "Bash(grep -n \"rune-appear\\\\|playRuneRecycleFly\\\\|card-land-shake\\\\|land-ripple\\\\|spell-vortex\" E:claudeCodeFWTCG_V3d_V9css*.css)",
+      "Bash(grep -n \"dmg-float\\\\|death-splash\\\\|showBanner\\\\|playRune\\\\|card-land-shake\" E:claudeCodeFWTCG_V3d_V9css*.css)"
+    ]
+  }
+}
