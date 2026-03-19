@@ -295,10 +295,6 @@ func _build_board() -> void:
 		func(_at, data): return _can_drop_play(data),     # 检查是否允许落下
 		func(_at, data): _drop_play_card(data))           # 执行打出逻辑
 
-	# ── 视觉装饰层（必须在游戏容器之前加入，渲染在所有UI之下）──
-	var aesthetic: Node2D = load("res://scenes/BoardAesthetic.gd").new()
-	add_child(aesthetic)
-
 	# ── 游戏内容容器（第二阶段：所有游戏元素加入容器）──
 	# log 折叠时 tween 此容器 position.x 实现居中；PASS 保证事件冒泡到 self
 	_game_container = Control.new()
