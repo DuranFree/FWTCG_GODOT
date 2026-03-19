@@ -469,6 +469,7 @@ func apply_spell(spell: Dictionary, owner: String, target_uid: int = -1, options
 			var target = _find_unit_by_uid(GameState.get_all_units(opponent), target_uid)
 			if target == null:
 				return
+			# 收集有空位的战场索引（目标方 < 2 个单位）
 			var bf_options: Array = []
 			for i in range(GameState.bf.size()):
 				var b = GameState.bf[i]
@@ -478,24 +479,48 @@ func apply_spell(spell: Dictionary, owner: String, target_uid: int = -1, options
 			if bf_options.is_empty():
 				GameState._log("战场无空位，法术失效！", "phase")
 				return
-				# AI 随机选，玩家通过 cards UI 选战场
-			var bf_idx: int = bf_options[randi() % bf_options.size()]
+			# 默认选第一个可用战场（AI 覆盖此值）
+			var bf_idx: int = bf_options[0]
 			if owner == "player":
+				# 玩家：弹窗选目标战场
 				var bf_cards: Array = []
 				for idx in bf_options:
 					var bname: String = GameState.bf[idx].get("card", {}).get("name", "战场%d" % (idx + 1)) \
 						if GameState.bf[idx].get("card") != null else "战场%d" % (idx + 1)
 					bf_cards.append({"uid": idx, "name": bname, "cost": 0, "text": "移入此战场", "type": "spell", "img": ""})
 				var sel = await PromptManager.ask({
-					"title": "魅惑妖术",
+					"title": "强制移动",
 					"msg": "选择将【%s】强制移入哪个战场？" % target.get("name","?"),
 					"type": "cards", "cards": bf_cards, "optional": false
 				})
 				if sel != null:
 					bf_idx = sel
+			else:
+				# AI：选对自己最有利的战场——己方单位数最多、对手单位数最少的战场
+				var best_score: int = -99
+				for idx in bf_options:
+					var b = GameState.bf[idx]
+					var my_side: Array  = b["pU"] if owner == "player" else b["eU"]
+					var op_side2: Array = b["eU"] if owner == "player" else b["pU"]
+					var score: int = my_side.size() - op_side2.size()
+					if score > best_score:
+						best_score = score
+						bf_idx = idx
+			# 确认目标单位当前所在战场（用于 from_loc 参数）
+			var from_loc: String = "base"
+			for i in range(GameState.bf.size()):
+				var b = GameState.bf[i]
+				var op_side3: Array = b["pU"] if opponent == "player" else b["eU"]
+				if op_side3.any(func(u): return u.get("uid", -1) == target.get("uid", -1)):
+					from_loc = str(i + 1)
+					break
 			remove_unit_from_field(target, opponent)
 			var op_dest: Array = GameState.bf[bf_idx]["pU"] if opponent == "player" else GameState.bf[bf_idx]["eU"]
 			op_dest.append(target)
+			# 更新源战场和目标战场的控制权
+			if from_loc != "base":
+				CombatManager.update_bf_control(int(from_loc))
+			CombatManager.update_bf_control(bf_idx + 1)
 			GameState._log("【%s】被强制移动至战场%d" % [target.get("name","?"), bf_idx + 1], "imp")
 
 		"ready_unit":

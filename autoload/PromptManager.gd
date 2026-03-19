@@ -21,6 +21,9 @@ var auto_mode: bool = false
 ## 当前是否正在等待一个 prompt 响应
 var _waiting: bool = false
 
+## 当前超时计时器（非 null 表示正在倒计时）
+var _timeout_timer: SceneTreeTimer = null
+
 # ─────────────────────────────────────────────
 # 主接口：ask()
 # 对应 JS:  const result = await askPrompt({ title, msg, type, cards, optional })
@@ -43,10 +46,17 @@ func ask(options: Dictionary) -> Variant:
 	if GameState.turn == "enemy":
 		return _ai_auto_choose(options)
 
-	# 玩家回合：发出信号，等待 UI 响应
+	# 玩家回合：发出信号，等待 UI 响应（最多 30 秒）
 	_waiting = true
 	emit_signal("show_prompt_requested", options)
+
+	# 启动 30 秒超时保护
+	_timeout_timer = get_tree().create_timer(30.0)
+	_timeout_timer.timeout.connect(_on_prompt_timeout, CONNECT_ONE_SHOT)
+
 	var result = await choice_made
+	# resolve() 已被调用：取消超时计时器（若还未触发）
+	_cancel_timeout()
 	_waiting = false
 	return result
 
@@ -55,6 +65,7 @@ func ask(options: Dictionary) -> Variant:
 ## 对应 JS 中 Promise 的 resolve()
 func resolve(value) -> void:
 	if _waiting:
+		_cancel_timeout()  # 玩家已响应，取消超时倒计时
 		emit_signal("choice_made", value)
 	else:
 		push_warning("PromptManager.resolve: 当前没有等待中的 prompt")
@@ -63,6 +74,22 @@ func resolve(value) -> void:
 ## cancel() — 取消当前 prompt（相当于用户选择 null/skip）
 func cancel() -> void:
 	resolve(null)
+
+
+## _cancel_timeout — 取消超时计时器（防止二次触发）
+func _cancel_timeout() -> void:
+	if _timeout_timer != null:
+		if _timeout_timer.timeout.is_connected(_on_prompt_timeout):
+			_timeout_timer.timeout.disconnect(_on_prompt_timeout)
+		_timeout_timer = null
+
+
+## _on_prompt_timeout — 超时回调：自动以 null 结束等待
+func _on_prompt_timeout() -> void:
+	if _waiting:
+		GameState._log("⏰ 选择超时（30秒），自动跳过", "phase")
+		_timeout_timer = null  # 已触发，清空引用
+		emit_signal("choice_made", null)
 
 
 # ─────────────────────────────────────────────

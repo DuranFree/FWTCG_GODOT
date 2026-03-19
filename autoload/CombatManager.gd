@@ -207,7 +207,9 @@ func trigger_combat(bf_id: int, attacker: String) -> void:
 		all_survivors.append_array(b["pU"])
 		all_survivors.append_array(b["eU"])
 	for u in all_survivors:
-		u["current_hp"] = u.get("current_atk", u.get("atk", 0))
+		if u.get("type", "") == "champion":
+			continue  # 传奇有独立 current_hp，不在此处重置
+		u["current_hp"] = u["current_atk"]
 
 	# ── 战斗结果判定 ──
 	var atk_alive: bool = (bfield["pU"] if attacker == "player" else bfield["eU"]).size() > 0
