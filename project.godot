@@ -31,5 +31,5 @@ AIManager="*res://autoload/AIManager.gd"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
-window/size/initial_width=1280
-window/size/initial_height=720
+window/size/initial_width=2560
+window/size/initial_height=1440
