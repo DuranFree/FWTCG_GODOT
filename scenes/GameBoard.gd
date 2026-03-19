@@ -71,20 +71,20 @@ const CH_HAND  := 100   # 手牌卡高
 const RUNE_D   := 26    # 符文按钮边长（26px 圆形，h_sep=2 时每行可放13个）
 
 # ── 颜色 ──────────────────────────────────────
-const C_BG          = Color(0.01, 0.04, 0.07)
-const C_STRIP_E     = Color(0.03, 0.04, 0.09)
-const C_STRIP_P     = Color(0.03, 0.06, 0.04)
-const C_BASE_E      = Color(0.03, 0.05, 0.10, 0.92)
-const C_BASE_P      = Color(0.03, 0.07, 0.04, 0.92)
-const C_HERO_ZONE   = Color(0.03, 0.05, 0.10, 0.88)
-const C_PILE_ZONE   = Color(0.01, 0.05, 0.10, 0.9)
-const C_BF_BG       = Color(0.03, 0.06, 0.09)
-const C_BF_PANEL    = Color(0.04, 0.08, 0.12)
-const C_HAND_BG     = Color(0.01, 0.03, 0.05)
-const C_ACTION_BG   = Color(0.02, 0.04, 0.06)
-const C_LOG_BG      = Color(0.01, 0.02, 0.04, 0.93)
-const C_ZONE_BORDER = Color(0.78, 0.67, 0.43, 0.20)
-const C_LABEL_DIM   = Color(0.45, 0.42, 0.36)
+const C_BG          = Color(0.005, 0.012, 0.030)
+const C_STRIP_E     = Color(0.04, 0.05, 0.12)
+const C_STRIP_P     = Color(0.04, 0.08, 0.05)
+const C_BASE_E      = Color(0.04, 0.06, 0.13, 0.95)
+const C_BASE_P      = Color(0.04, 0.09, 0.05, 0.95)
+const C_HERO_ZONE   = Color(0.04, 0.06, 0.13, 0.92)
+const C_PILE_ZONE   = Color(0.02, 0.06, 0.12, 0.95)
+const C_BF_BG       = Color(0.02, 0.04, 0.08)
+const C_BF_PANEL    = Color(0.03, 0.06, 0.11)
+const C_HAND_BG     = Color(0.01, 0.02, 0.05)
+const C_ACTION_BG   = Color(0.02, 0.03, 0.07)
+const C_LOG_BG      = Color(0.01, 0.02, 0.04, 0.95)
+const C_ZONE_BORDER = Color(0.78, 0.67, 0.43, 0.85)
+const C_LABEL_DIM   = Color(0.55, 0.52, 0.44)
 
 const C_CARD_FOLLOW = Color(0.16, 0.24, 0.40)
 const C_CARD_SPELL  = Color(0.20, 0.14, 0.38)
@@ -203,6 +203,12 @@ var _timer_container:   Control = null
 var _timer_num_lbl:     Label   = null
 var _timer_bar:         ColorRect = null
 
+# ── 符文多选待确认 ──
+var _rune_tap_uids:     Array = []   # 待横置符文 UID 列表
+var _rune_recycle_uids: Array = []   # 待回收符文 UID 列表
+var _rune_confirm_bar:  Control = null   # 已废弃，保留避免空引用
+var _rune_confirm_lbl:  Label   = null   # 已废弃，保留避免空引用
+
 
 # ═══════════════════════════════════════════════
 # 初始化
@@ -213,7 +219,6 @@ func _ready() -> void:
 	_build_board()
 	_build_card_detail_overlay()
 	_build_timer_widget()
-	_build_particle_bg()
 	_connect_signals()
 	_start_bgm()
 	PromptManager.auto_mode = false
@@ -267,8 +272,20 @@ func _process(delta: float) -> void:
 func _build_board() -> void:
 	_gc = self   # 第一阶段：直接加到 self
 
-	# 全屏背景（留在 self，始终铺满 1280×720）
+	# 全屏深色背景
 	_add_rect(_gc, C_BG, 0, 0, 1280, 720)
+	# 中央微弱蓝色光晕（营造深度感）
+	var glow := ColorRect.new()
+	glow.color = Color(0.04, 0.08, 0.18, 0.28)
+	_set_abs(glow, 150, 80, 850, 560)
+	_gc.add_child(glow)
+	# 战场区域专属暗色叠加（让战场更像竞技场）
+	var arena_shadow := ColorRect.new()
+	arena_shadow.color = Color(0.00, 0.01, 0.03, 0.45)
+	_set_abs(arena_shadow, GX2, BOARD_Y + GRY3, GX7 - GX2, GRH3)
+	_gc.add_child(arena_shadow)
+	# 背景粒子：Control 树无法在背景与 UI 之间插入 z 层，改为静态装饰
+	# _build_particle_bg() 已停用，按需特效（_spawn_burst / _spawn_click_ripple）正常工作
 
 	# ── 拖拽落区：直接设在 self（GameBoard）──
 	# Godot 4 拖拽时沿"父节点链"查找接收方；self 是所有游戏控件的祖先，
@@ -360,14 +377,15 @@ func _build_board_grid() -> void:
 func _build_score_track_player() -> void:
 	var y := BOARD_Y + GRY3
 	var h := GRH3 + GR_GAP + GRH4 + GR_GAP + GRH5   # = 383
-	var bg := _add_rect(_gc, Color(0.03, 0.07, 0.03, 0.95), GX1, y, GCW_SC, h)
+	var bg := _add_rect(_gc, Color(0.03, 0.08, 0.04, 0.97), GX1, y, GCW_SC, h)
+	_add_zone_border(bg)
 	var win: int = GameState.win_score if GameState.win_score > 0 else 8
 	var step: float = float(h) / float(win + 1)
 	for v in range(win + 1):
 		var lbl := Label.new()
 		lbl.text = str(win - v)
 		lbl.add_theme_font_size_override("font_size", 9)
-		lbl.add_theme_color_override("font_color", Color(0.3, 0.7, 0.3))
+		lbl.add_theme_color_override("font_color", Color(0.25, 0.85, 0.35))
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_set_abs(lbl, 0, int(step * v), GCW_SC, int(step))
 		bg.add_child(lbl)
@@ -378,14 +396,15 @@ func _build_score_track_player() -> void:
 func _build_score_track_enemy() -> void:
 	var y := BOARD_Y + GRY1
 	var h := GRH1 + GR_GAP + GRH2 + GR_GAP + GRH3   # = 383
-	var bg := _add_rect(_gc, Color(0.07, 0.03, 0.03, 0.95), GX7, y, GCW_SC, h)
+	var bg := _add_rect(_gc, Color(0.09, 0.03, 0.03, 0.97), GX7, y, GCW_SC, h)
+	_add_zone_border(bg)
 	var win: int = GameState.win_score if GameState.win_score > 0 else 8
 	var step: float = float(h) / float(win + 1)
 	for v in range(win + 1):
 		var lbl := Label.new()
 		lbl.text = str(v)
 		lbl.add_theme_font_size_override("font_size", 9)
-		lbl.add_theme_color_override("font_color", Color(0.7, 0.3, 0.3))
+		lbl.add_theme_color_override("font_color", Color(0.90, 0.30, 0.28))
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_set_abs(lbl, 0, int(step * v), GCW_SC, int(step))
 		bg.add_child(lbl)
@@ -510,6 +529,7 @@ func _build_player_rune_row() -> void:
 	_player_rune_row.add_theme_constant_override("v_separation", 2)
 	_set_abs(_player_rune_row, 2, 2, GCW_CENTER - 4, GRH4 - 4)
 	rune_bg.add_child(_player_rune_row)
+	# _rune_confirm_bar 已废弃：改为复用 _btn_tap_all 作确认按钮
 
 	# 我方英雄区（col5，跨行4+5）
 	_player_hero_zone = _build_hero_legend_slot(GX5, ay, GCW_ZN, GRH_PHL, "英雄位", false)
@@ -562,7 +582,7 @@ func _build_action_panel() -> void:
 	_set_abs(_msg_lbl, 360, 4, 530, 38)
 	_msg_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
-	_btn_tap_all = _mk_button("横置全部符文", _tap_all_runes)
+	_btn_tap_all = _mk_button("横置全部符文", _tap_all_or_confirm)
 	_set_abs(_btn_tap_all, 500, 5, 140, 36)
 	bg.add_child(_btn_tap_all)
 
@@ -574,6 +594,15 @@ func _build_action_panel() -> void:
 	_btn_end = _mk_button("结束回合", _end_turn)
 	_set_abs(_btn_end, 880, 5, 106, 36)
 	bg.add_child(_btn_end)
+	var end_style := StyleBoxFlat.new()
+	end_style.bg_color = Color(0.15, 0.08, 0.02)
+	end_style.border_color = Color(0.85, 0.70, 0.28)
+	end_style.set_border_width_all(2)
+	end_style.corner_radius_top_left = 5; end_style.corner_radius_top_right = 5
+	end_style.corner_radius_bottom_left = 5; end_style.corner_radius_bottom_right = 5
+	_btn_end.add_theme_stylebox_override("normal", end_style)
+	_btn_end.add_theme_color_override("font_color", Color(0.95, 0.82, 0.42))
+	_btn_end.add_theme_font_size_override("font_size", 13)
 
 	_btn_duel_pass = _mk_button("⚔ 跳过对决", _duel_pass)
 	_set_abs(_btn_duel_pass, 652, 5, 220, 36)
@@ -734,11 +763,11 @@ func _build_pile_zone(x: int, y: int, w: int, h: int, label: String) -> ColorRec
 	var cy := (h - card_h) / 2 - 6
 	var card_icon := _add_rect(bg, C_CARD_BACK, cx, cy, card_w, card_h)
 	var card_style := StyleBoxFlat.new()
-	card_style.bg_color = C_CARD_BACK
-	card_style.border_color = Color(0.6, 0.5, 0.3, 0.6)
-	card_style.set_border_width_all(1)
-	card_style.corner_radius_top_left = 2; card_style.corner_radius_top_right = 2
-	card_style.corner_radius_bottom_left = 2; card_style.corner_radius_bottom_right = 2
+	card_style.bg_color = Color(0.08, 0.11, 0.20)
+	card_style.border_color = Color(0.72, 0.60, 0.28, 0.85)
+	card_style.set_border_width_all(2)
+	card_style.corner_radius_top_left = 3; card_style.corner_radius_top_right = 3
+	card_style.corner_radius_bottom_left = 3; card_style.corner_radius_bottom_right = 3
 	# 标签
 	var lbl := _add_label(bg, label, 7, C_LABEL_DIM, 0, 2)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -746,28 +775,50 @@ func _build_pile_zone(x: int, y: int, w: int, h: int, label: String) -> ColorRec
 	return bg
 
 
-## 金色细边框
+## 金色厚边框（2px + 四角高亮）
 func _add_zone_border(node: ColorRect) -> void:
-	var bc := C_ZONE_BORDER
-	var bw := 1
+	var bc := C_ZONE_BORDER   # 金色
+	var bw := 2
 	# 上边
 	var t := ColorRect.new(); t.color = bc
 	t.anchor_right = 1.0; t.offset_top = 0; t.offset_bottom = bw
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE; t.z_index = 5
 	node.add_child(t)
 	# 下边
 	var b := ColorRect.new(); b.color = bc
 	b.anchor_top = 1.0; b.anchor_right = 1.0; b.anchor_bottom = 1.0
 	b.offset_top = -bw; b.offset_bottom = 0
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE; b.z_index = 5
 	node.add_child(b)
 	# 左边
 	var l := ColorRect.new(); l.color = bc
 	l.anchor_bottom = 1.0; l.offset_left = 0; l.offset_right = bw
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE; l.z_index = 5
 	node.add_child(l)
 	# 右边
 	var r := ColorRect.new(); r.color = bc
 	r.anchor_left = 1.0; r.anchor_right = 1.0; r.anchor_bottom = 1.0
 	r.offset_left = -bw; r.offset_right = 0
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE; r.z_index = 5
 	node.add_child(r)
+	# 四角高亮点（6×6 亮金色方块）
+	var cc := Color(0.96, 0.88, 0.48, 0.95)
+	var cs := 5
+	# 左上
+	var c1 := ColorRect.new(); c1.color = cc; c1.mouse_filter = Control.MOUSE_FILTER_IGNORE; c1.z_index = 6
+	_set_abs(c1, 0, 0, cs, cs); node.add_child(c1)
+	# 右上
+	var c2 := ColorRect.new(); c2.color = cc; c2.mouse_filter = Control.MOUSE_FILTER_IGNORE; c2.z_index = 6
+	c2.anchor_left = 1.0; c2.anchor_right = 1.0; c2.offset_left = -cs; c2.offset_right = 0
+	c2.offset_top = 0; c2.offset_bottom = cs; node.add_child(c2)
+	# 左下
+	var c3 := ColorRect.new(); c3.color = cc; c3.mouse_filter = Control.MOUSE_FILTER_IGNORE; c3.z_index = 6
+	c3.anchor_top = 1.0; c3.anchor_bottom = 1.0; c3.offset_top = -cs; c3.offset_bottom = 0
+	c3.offset_left = 0; c3.offset_right = cs; node.add_child(c3)
+	# 右下
+	var c4 := ColorRect.new(); c4.color = cc; c4.mouse_filter = Control.MOUSE_FILTER_IGNORE; c4.z_index = 6
+	c4.anchor_left = 1.0; c4.anchor_right = 1.0; c4.anchor_top = 1.0; c4.anchor_bottom = 1.0
+	c4.offset_left = -cs; c4.offset_right = 0; c4.offset_top = -cs; c4.offset_bottom = 0; node.add_child(c4)
 
 
 ## 战场槽位内部构建
@@ -776,12 +827,13 @@ func _build_bf_slot(parent: Control, idx: int, panel_w: int) -> void:
 	var half_h := 104   # 敌我各半
 
 	# 敌方单位区（上半）
-	var e_bg := _add_rect(parent, Color(0.05, 0.05, 0.12, 0.6), 2, 2, panel_w - 4, half_h)
+	var e_bg := _add_rect(parent, Color(0.04, 0.04, 0.14, 0.75), 2, 2, panel_w - 4, half_h)
+	_add_zone_border(e_bg)
 	var eu := _add_hbox(e_bg, 3, 3, 3, 3, panel_w - 10, half_h - 6)
 	_bf_eu.append(eu)
 
 	# 中间分隔条（控制状态 + 战场名）
-	var div := _add_rect(parent, Color(0.15, 0.15, 0.20), 2, half_h + 4, panel_w - 4, 20)
+	var div := _add_rect(parent, Color(0.18, 0.16, 0.10), 2, half_h + 4, panel_w - 4, 20)
 	var ctrl_lbl := _add_label(div, "─ 战场%d ─" % (idx + 1), 9, Color.GRAY, 0, 2)
 	ctrl_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	ctrl_lbl.anchor_right = 0.5; ctrl_lbl.offset_right = 0; ctrl_lbl.offset_left = 4
@@ -793,7 +845,8 @@ func _build_bf_slot(parent: Control, idx: int, panel_w: int) -> void:
 
 	# 我方单位区（下半）
 	var p_bg_y := half_h + 26
-	var p_bg := _add_rect(parent, Color(0.05, 0.12, 0.06, 0.6), 2, p_bg_y, panel_w - 4, half_h)
+	var p_bg := _add_rect(parent, Color(0.04, 0.12, 0.05, 0.75), 2, p_bg_y, panel_w - 4, half_h)
+	_add_zone_border(p_bg)
 	var pu := _add_hbox(p_bg, 3, 3, 3, 3, panel_w - 10, half_h - 6)
 	_bf_pu.append(pu)
 
@@ -872,8 +925,8 @@ func _refresh_info_strips() -> void:
 		e_name, e_hand, e_mana, e_runes, _sch_str("enemy"),
 		"[AI行动中...]" if et == "enemy" else ""]
 
-	_player_info_lbl.text = "玩家（%s）  手牌:%d  牌库:%d  法力:%d  符文:%d" % [
-		p_name, p_hand, p_deck, p_mana, p_runes]
+	_player_info_lbl.text = "玩家（%s）  手牌:%d  牌库:%d  法力:%d  符文:%d  符能:%s" % [
+		p_name, p_hand, p_deck, p_mana, p_runes, _sch_str("player")]
 
 	_score_lbl.text = "P: %d │ E: %d  目标: %d" % [
 		GameState.p_score, GameState.e_score, GameState.win_score]
@@ -1051,14 +1104,14 @@ func _refresh_player_units() -> void:
 
 
 func _refresh_player_runes() -> void:
+	# 若当前阶段已不允许该操作，自动清除待确认状态
+	var ok_tap     := (GameState.turn == "player" and GameState.phase in ["summon", "action"])
+	var ok_recycle := (GameState.turn == "player" and GameState.phase == "action")
+	if not ok_tap:     _rune_tap_uids.clear()
+	if not ok_recycle: _rune_recycle_uids.clear()
+	if _rune_tap_uids.is_empty() and _rune_recycle_uids.is_empty():
+		if _btn_tap_all: _btn_tap_all.text = "横置全部符文"
 	_clear_children(_player_rune_row)
-	var sch_lbl := Label.new()
-	sch_lbl.text = "符能: %s" % _sch_str("player")
-	sch_lbl.add_theme_font_size_override("font_size", 10)
-	sch_lbl.add_theme_color_override("font_color", Color.WHEAT)
-	sch_lbl.custom_minimum_size = Vector2(140, 0)
-	_player_rune_row.add_child(sch_lbl)
-
 	for i in range(GameState.p_runes.size()):
 		var r: Dictionary = GameState.p_runes[i]
 		_player_rune_row.add_child(_mk_rune_btn(r, i))
@@ -1263,10 +1316,15 @@ func _mk_card_base(card: Dictionary, cw: int, ch: int) -> PanelContainer:
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = _card_color(card)
-	style.corner_radius_top_left     = 3
-	style.corner_radius_top_right    = 3
-	style.corner_radius_bottom_left  = 3
-	style.corner_radius_bottom_right = 3
+	style.border_color = Color(0.62, 0.52, 0.22, 0.75)  # 金色卡框
+	style.border_width_top    = 1
+	style.border_width_bottom = 1
+	style.border_width_left   = 1
+	style.border_width_right  = 1
+	style.corner_radius_top_left     = 4
+	style.corner_radius_top_right    = 4
+	style.corner_radius_bottom_left  = 4
+	style.corner_radius_bottom_right = 4
 	pc.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
@@ -1707,52 +1765,62 @@ func _center_in_zone(node: Control, zone: Control, zone_w: int, zone_h: int) -> 
 	_set_abs(node, cx, cy, cw, ch)
 
 
-## 符文按钮（玩家端，可点击横置/回收）
-func _mk_rune_btn(rune: Dictionary, idx: int) -> Control:
-	var cont := VBoxContainer.new()
-	cont.custom_minimum_size = Vector2(RUNE_D + 2, RUNE_D + 14)
-
-	var rtype = rune.get("rune_type", "blazing")
-	var tapped = rune.get("tapped", false)
-	var rcolor: Color = RUNE_COLORS.get(rtype, Color.GRAY)
+## 符文按钮（玩家端）— 左键选「横置」，右键选「回收」，点确定才执行
+func _mk_rune_btn(rune: Dictionary, _idx: int) -> Control:
+	var rtype:  String = rune.get("rune_type", "blazing")
+	var tapped: bool   = rune.get("tapped", false)
+	var uid:    int    = rune.get("uid", -1)
+	var rcolor: Color  = RUNE_COLORS.get(rtype, Color.GRAY)
 	if tapped:
 		rcolor = rcolor.darkened(0.5)
 
 	var btn := Button.new()
 	btn.text = RUNE_ABBR.get(rtype, "?")
 	btn.custom_minimum_size = Vector2(RUNE_D, RUNE_D)
-	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER  # 防止水平拉伸成胶囊
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
+
 	var sbtn := StyleBoxFlat.new()
 	sbtn.bg_color = rcolor
 	sbtn.corner_radius_top_left     = RUNE_D / 2
 	sbtn.corner_radius_top_right    = RUNE_D / 2
 	sbtn.corner_radius_bottom_left  = RUNE_D / 2
 	sbtn.corner_radius_bottom_right = RUNE_D / 2
+
+	# 选中高亮描边：横置=金色，回收=蓝色（可同时选中两个列表）
+	if uid in _rune_tap_uids or uid in _rune_recycle_uids:
+		var bc := Color(0.3, 0.8, 1.0) if uid in _rune_recycle_uids else Color(1.0, 0.9, 0.2)
+		sbtn.border_width_left   = 2; sbtn.border_width_right  = 2
+		sbtn.border_width_top    = 2; sbtn.border_width_bottom = 2
+		sbtn.border_color = bc
+
 	btn.add_theme_stylebox_override("normal", sbtn)
 	btn.add_theme_stylebox_override("hover",  sbtn)
-	var _uid: int = rune.get("uid", -1)
-	if not tapped:
-		btn.pressed.connect(func(): _tap_rune(_uid))
-	else:
+
+	if tapped:
 		btn.disabled = true
-	# 符文按钮是 STOP，覆盖一片区域，转发拖拽落点
+		btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
+	else:
+		var _uid := uid
+		var is_action := (GameState.turn == "player" and GameState.phase == "action")
+		var is_summon := (GameState.turn == "player" and GameState.phase == "summon")
+		# 左键 → 选横置（召出阶段 / 行动阶段均可）
+		if is_action or is_summon:
+			btn.pressed.connect(func(): _select_rune(_uid, "tap"))
+		# 右键 → 选回收（仅行动阶段）
+		if is_action:
+			btn.gui_input.connect(func(ev: InputEvent):
+				if ev is InputEventMouseButton and ev.pressed \
+						and ev.button_index == MOUSE_BUTTON_RIGHT:
+					_select_rune(_uid, "recycle"))
+
+	# 保留拖拽落点转发（出牌落入符文区）
 	btn.set_drag_forwarding(
 		func(_at): return null,
 		func(_at, data): return _can_drop_play(data),
 		func(_at, data): _drop_play_card(data))
-	cont.add_child(btn)
 
-	var rec := Button.new()
-	rec.text = "回收"
-	rec.custom_minimum_size = Vector2(RUNE_D, 12)
-	rec.add_theme_font_size_override("font_size", 8)
-	var is_action := (GameState.turn == "player" and GameState.phase == "action")
-	if not is_action:
-		rec.disabled = true
-	else:
-		rec.pressed.connect(func(): _recycle_rune(_uid))
-	cont.add_child(rec)
-	return cont
+	return btn
 
 
 ## 符文展示（AI侧，不可交互）— 与玩家符文相同圆形样式
@@ -2120,6 +2188,14 @@ func _play_selected() -> void:
 		GameState.emit_signal("reaction_player_acted")
 
 
+## 横置全部 / 确认已选符文（复用同一按钮）
+func _tap_all_or_confirm() -> void:
+	if not _rune_tap_uids.is_empty() or not _rune_recycle_uids.is_empty():
+		_confirm_rune_action()
+	else:
+		_tap_all_runes()
+
+
 func _tap_all_runes() -> void:
 	if GameState.turn != "player": return
 	# 直接批量横置，只发一次 state_updated，避免多次重绘卡顿
@@ -2132,6 +2208,105 @@ func _tap_all_runes() -> void:
 	if changed:
 		GameState._log("横置所有符文，+%d法力（共%d）" % [GameState.p_runes.size(), GameState.p_mana], "phase")
 		GameState.emit_signal("state_updated")
+
+
+## 构建符文操作确认浮层（在符文行顶部悬浮，默认隐藏）
+func _build_rune_confirm_bar(px: int, py: int) -> void:
+	var bar := PanelContainer.new()
+	bar.visible = false
+	bar.z_index = 30
+	_set_abs(bar, px, py, GCW_CENTER, 28)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.08, 0.18, 0.94)
+	sb.corner_radius_top_left     = 4
+	sb.corner_radius_top_right    = 4
+	sb.corner_radius_bottom_left  = 4
+	sb.corner_radius_bottom_right = 4
+	sb.border_width_left = 1; sb.border_width_right  = 1
+	sb.border_width_top  = 1; sb.border_width_bottom = 1
+	sb.border_color = Color(0.6, 0.6, 0.9, 0.6)
+	bar.add_theme_stylebox_override("panel", sb)
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 6)
+	var lbl := Label.new()
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", Color.WHITE)
+	hbox.add_child(lbl)
+	_rune_confirm_lbl = lbl
+	var ok_btn := Button.new()
+	ok_btn.text = "✓ 确定"
+	ok_btn.custom_minimum_size = Vector2(64, 0)
+	ok_btn.add_theme_font_size_override("font_size", 11)
+	ok_btn.pressed.connect(_confirm_rune_action)
+	hbox.add_child(ok_btn)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "✕ 取消"
+	cancel_btn.custom_minimum_size = Vector2(64, 0)
+	cancel_btn.add_theme_font_size_override("font_size", 11)
+	cancel_btn.pressed.connect(_cancel_rune_action)
+	hbox.add_child(cancel_btn)
+	bar.add_child(hbox)
+	_game_container.add_child(bar)
+	_rune_confirm_bar = bar
+
+
+## 选中/取消符文（左键=横置列表，右键=回收列表，再点同张同操作=取消）
+func _select_rune(uid: int, action: String) -> void:
+	if GameState.turn != "player": return
+	if action == "tap"     and GameState.phase not in ["summon", "action"]: return
+	if action == "recycle" and GameState.phase != "action": return
+	if action == "tap":
+		if uid in _rune_tap_uids:
+			_rune_tap_uids.erase(uid)      # 再点 → 取消
+		else:
+			_rune_tap_uids.append(uid)
+			_rune_recycle_uids.erase(uid)  # 同一张不能同时两个操作
+	else:
+		if uid in _rune_recycle_uids:
+			_rune_recycle_uids.erase(uid)
+		else:
+			_rune_recycle_uids.append(uid)
+			_rune_tap_uids.erase(uid)
+	_update_tap_all_btn_text()
+	_refresh_player_runes()
+
+
+## 更新横置全部/确定按钮文字
+func _update_tap_all_btn_text() -> void:
+	if not _btn_tap_all: return
+	var t := _rune_tap_uids.size()
+	var r := _rune_recycle_uids.size()
+	if t == 0 and r == 0:
+		_btn_tap_all.text = "横置全部符文"
+	else:
+		var parts: Array = []
+		if t > 0: parts.append("横置×%d" % t)
+		if r > 0: parts.append("回收×%d" % r)
+		_btn_tap_all.text = "✓ 确定（%s）" % "  ".join(parts)
+
+
+## 确定执行所有已选符文操作
+func _confirm_rune_action() -> void:
+	if _rune_tap_uids.is_empty() and _rune_recycle_uids.is_empty(): return
+	var taps     := _rune_tap_uids.duplicate()
+	var recycles := _rune_recycle_uids.duplicate()
+	# 先清状态，防止 state_updated 回调重入
+	_rune_tap_uids.clear()
+	_rune_recycle_uids.clear()
+	if _btn_tap_all: _btn_tap_all.text = "横置全部符文"
+	for uid in taps:
+		GameState.tap_rune("player", uid)
+	for uid in recycles:
+		GameState.recycle_rune("player", uid)
+
+
+## 取消全部符文选中
+func _cancel_rune_action() -> void:
+	_rune_tap_uids.clear()
+	_rune_recycle_uids.clear()
+	if _btn_tap_all: _btn_tap_all.text = "横置全部符文"
+	_refresh_player_runes()
 
 
 func _tap_rune(uid: int) -> void:
@@ -2476,13 +2651,17 @@ func _clear_children(node: Node) -> void:
 
 ## 单位入场动画：缩放弹入 + 淡入 + 粒子爆破
 func _anim_enter(node: Control) -> void:
-	node.pivot_offset = node.size / 2.0
-	node.scale        = Vector2(0.4, 0.4)
+	# 先用 custom_minimum_size 做 pivot（layout 完成前 size 为 0）
+	var half := node.custom_minimum_size / 2.0 if node.custom_minimum_size != Vector2.ZERO else Vector2(32.0, 45.0)
+	node.pivot_offset = half
+	node.scale        = Vector2(0.3, 0.3)
 	node.modulate.a   = 0.0
 	var tw := node.create_tween()
-	tw.tween_property(node, "scale",       Vector2(1.0, 1.0), 0.30)\
+	tw.tween_property(node, "scale", Vector2(1.15, 1.15), 0.22)\
 	  .set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(node, "modulate:a", 1.0, 0.22)
+	tw.tween_property(node, "scale", Vector2(1.0, 1.0), 0.12)\
+	  .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(node, "modulate:a", 1.0, 0.20)
 	# 延迟一帧后在世界坐标创建粒子（确保 layout 完成）
 	(func(): _spawn_burst(node)).call_deferred()
 
@@ -2494,20 +2673,23 @@ func _spawn_burst(node: Control, burst_color: Color = Color(0.98, 0.82, 0.15)) -
 	var p := CPUParticles2D.new()
 	p.emitting          = false
 	p.one_shot          = true
-	p.explosiveness     = 0.92
-	p.amount            = 22
-	p.lifetime          = 0.75
-	p.initial_velocity_min = 70.0
-	p.initial_velocity_max = 180.0
+	p.explosiveness     = 0.95
+	p.amount            = 40
+	p.lifetime          = 1.0
+	p.initial_velocity_min = 90.0
+	p.initial_velocity_max = 240.0
 	p.spread            = 180.0
-	p.gravity           = Vector2(0.0, 320.0)
-	p.scale_amount_min  = 2.5
-	p.scale_amount_max  = 5.5
+	p.gravity           = Vector2(0.0, 280.0)
+	p.scale_amount_min  = 3.0
+	p.scale_amount_max  = 7.0
 	p.color             = burst_color
-	p.global_position   = node.global_position + node.size * 0.5
+	p.z_index           = 200
+	# 用 global_position：layout 完成后 node.size 才有效，优先用 custom_minimum_size
+	var sz := node.size if node.size != Vector2.ZERO else node.custom_minimum_size
+	p.global_position   = node.global_position + sz * 0.5
 	add_child(p)
 	p.emitting = true
-	get_tree().create_timer(1.6).timeout.connect(func():
+	get_tree().create_timer(2.0).timeout.connect(func():
 		if is_instance_valid(p): p.queue_free()
 	)
 
@@ -2562,8 +2744,10 @@ func _on_combat_start(bf_id: int, attacker: String) -> void:
 func _flash_node(node: CanvasItem, flash_col: Color) -> void:
 	if not is_instance_valid(node): return
 	var tw := node.create_tween()
-	tw.tween_property(node, "modulate", flash_col, 0.08)
-	tw.tween_property(node, "modulate", Color.WHITE, 0.30)
+	tw.tween_property(node, "modulate", flash_col, 0.06)
+	tw.tween_property(node, "modulate", Color.WHITE, 0.08)
+	tw.tween_property(node, "modulate", flash_col * 0.8, 0.06)
+	tw.tween_property(node, "modulate", Color.WHITE, 0.40)
 
 
 # ═══════════════════════════════════════════════
@@ -2809,18 +2993,22 @@ func _anim_screen_shake() -> void:
 func _spawn_damage_text(pos: Vector2, amount: int, is_leg: bool) -> void:
 	var lbl := Label.new()
 	lbl.text = "-%d" % amount
-	lbl.add_theme_font_size_override("font_size", 22 if is_leg else 16)
-	var col := Color(1.0, 0.95, 0.2) if is_leg else Color(1.0, 0.32, 0.32)
+	lbl.add_theme_font_size_override("font_size", 30 if is_leg else 22)
+	var col := Color(1.0, 0.95, 0.2) if is_leg else Color(1.0, 0.25, 0.25)
 	lbl.add_theme_color_override("font_color", col)
-	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	lbl.add_theme_constant_override("outline_size", 3)
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1.0))
+	lbl.add_theme_constant_override("outline_size", 5)
 	lbl.position = pos
 	lbl.z_index  = 250
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(lbl)
+	# 先放大弹出，再飘上淡出
 	var tw := lbl.create_tween()
-	tw.tween_property(lbl, "position:y", pos.y - 65, 0.85).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.85)
+	lbl.pivot_offset = lbl.size / 2
+	lbl.scale = Vector2(1.6, 1.6)
+	tw.tween_property(lbl, "scale", Vector2(1.0, 1.0), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(lbl, "position:y", pos.y - 85, 1.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "modulate:a", 0.0, 0.35)
 	tw.tween_callback(lbl.queue_free)
 
 
@@ -2854,20 +3042,34 @@ func _on_unit_damaged(uid: int, amount: int, is_leg: bool) -> void:
 	_spawn_damage_text(pos, amount, is_leg)
 
 
-## 鼠标点击涟漪（蓝色扩散圆环）
+## 鼠标点击涟漪（双环扩散：内圈亮金 + 外圈蓝）
 func _spawn_click_ripple(pos: Vector2) -> void:
-	var r := ColorRect.new()
-	r.size = Vector2(28, 28)
-	r.color = Color(0.35, 0.65, 1.0, 0.48)
-	r.position = pos - r.size / 2
-	r.z_index = 90
-	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	r.pivot_offset = r.size / 2
-	add_child(r)
-	var tw := r.create_tween()
-	tw.tween_property(r, "scale", Vector2(4.0, 4.0), 0.38).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(r, "modulate:a", 0.0, 0.38)
-	tw.tween_callback(r.queue_free)
+	# 内圈：亮金色，小快
+	var r1 := ColorRect.new()
+	r1.size = Vector2(18, 18)
+	r1.color = Color(0.98, 0.88, 0.42, 0.90)
+	r1.position = pos - r1.size / 2
+	r1.z_index = 90
+	r1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r1.pivot_offset = r1.size / 2
+	add_child(r1)
+	var tw1 := r1.create_tween()
+	tw1.tween_property(r1, "scale", Vector2(5.5, 5.5), 0.32).set_ease(Tween.EASE_OUT)
+	tw1.parallel().tween_property(r1, "modulate:a", 0.0, 0.32)
+	tw1.tween_callback(r1.queue_free)
+	# 外圈：蓝白色，大慢
+	var r2 := ColorRect.new()
+	r2.size = Vector2(30, 30)
+	r2.color = Color(0.50, 0.78, 1.0, 0.70)
+	r2.position = pos - r2.size / 2
+	r2.z_index = 89
+	r2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r2.pivot_offset = r2.size / 2
+	add_child(r2)
+	var tw2 := r2.create_tween()
+	tw2.tween_property(r2, "scale", Vector2(7.0, 7.0), 0.55).set_ease(Tween.EASE_OUT)
+	tw2.parallel().tween_property(r2, "modulate:a", 0.0, 0.55)
+	tw2.tween_callback(r2.queue_free)
 
 
 ## 手牌新摸入场动画（缩放弹入 + 淡入，按顺序错开）
@@ -2886,9 +3088,10 @@ func _anim_hand_enter(node: Control, idx: int) -> void:
 
 ## 背景粒子系统（金色 + 蓝色漂浮光点，低透明度环境效果）
 func _build_particle_bg() -> void:
+	# z_index=8：浮在所有游戏UI(z=0)之上，低于弹窗(z=100+)
 	# 金色主粒子
 	var p := CPUParticles2D.new()
-	p.z_index          = -1
+	p.z_index          = 8
 	p.emitting          = true
 	p.amount            = 35
 	p.lifetime          = 10.0
@@ -2900,14 +3103,14 @@ func _build_particle_bg() -> void:
 	p.initial_velocity_max = 38.0
 	p.scale_amount_min  = 1.5
 	p.scale_amount_max  = 4.0
-	p.color             = Color(1.0, 0.85, 0.22, 0.33)
+	p.color             = Color(1.0, 0.85, 0.22, 0.45)
 	p.emission_shape    = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
 	p.emission_rect_extents = Vector2(500, 360)
 	p.position          = Vector2(500, 360)
 	add_child(p)
 	# 蓝色次粒子
 	var p2 := CPUParticles2D.new()
-	p2.z_index          = -1
+	p2.z_index          = 8
 	p2.emitting          = true
 	p2.amount            = 18
 	p2.lifetime          = 13.0
@@ -2919,7 +3122,7 @@ func _build_particle_bg() -> void:
 	p2.initial_velocity_max = 26.0
 	p2.scale_amount_min  = 1.0
 	p2.scale_amount_max  = 3.0
-	p2.color             = Color(0.28, 0.55, 1.0, 0.22)
+	p2.color             = Color(0.28, 0.55, 1.0, 0.32)
 	p2.emission_shape    = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
 	p2.emission_rect_extents = Vector2(500, 360)
 	p2.position          = Vector2(500, 360)
