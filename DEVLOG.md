@@ -2,6 +2,22 @@
 
 > ✅已完成 | 🔧修复 | ⚠️待验证 | 📌待做
 
+## 当前完成度（2026-03-19）
+
+| 系统 | 完成度 |
+|------|--------|
+| GameState | ~100% |
+| CardDatabase | 100% |
+| AIManager | ~98% |
+| CombatManager | ~98% |
+| SpellManager | ~98% |
+| KeywordManager | ~95% |
+| LegendManager | ~100% |
+| PromptManager | ~80% |
+| GameBoard UI | ~97% |
+
+**总体：约 97%**
+
 ---
 
 ## 2026-03-18（续）
